@@ -166,10 +166,29 @@ def build_omx_exec_command(workdir: Path, mode_prompt: str, run_log: Path, dange
     return f"cd {shlex.quote(str(workdir))} && {cmd} {shlex.quote(mode_prompt)} >> {shlex.quote(str(run_log))} 2>&1"
 
 
-def start_tmux_command(session_name: str, cmd: str) -> None:
+DEFAULT_TMUX_KEYWORDS = "error,failed,blocked,PR created,complete"
+DEFAULT_TMUX_STALE_MINUTES = "20"
+
+
+def start_tmux_command(session_name: str, cmd: str, cwd: Path) -> None:
+    import time
     if tmux_has_session(session_name):
         raise SystemExit(f"tmux session already exists: {session_name}")
-    subprocess.run(["tmux", "new-session", "-d", "-s", session_name, cmd], check=True)
+    subprocess.Popen([
+        "clawhip", "tmux", "new",
+        "--session", session_name,
+        "--cwd", str(cwd),
+        "--keywords", DEFAULT_TMUX_KEYWORDS,
+        "--stale-minutes", DEFAULT_TMUX_STALE_MINUTES,
+        "--format", "alert",
+        "--",
+        "bash", "-lc", cmd,
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(20):
+        if tmux_has_session(session_name):
+            return
+        time.sleep(0.25)
+    raise SystemExit(f"tmux session did not appear after launch: {session_name}")
 
 
 def cmd_proj_init(args: argparse.Namespace) -> int:
@@ -261,7 +280,7 @@ def cmd_omx_deep_interview(args: argparse.Namespace) -> int:
 
     prompt = f'$deep-interview {shlex.quote(args.prompt)}'
     cmd = build_omx_exec_command(workdir, prompt, run_log, dangerous=args.dangerous)
-    start_tmux_command(session_name, cmd)
+    start_tmux_command(session_name, cmd, workdir)
 
     before = lane["state"]
     lane = lane_state_change(lane, new_state="planning", continuation_owner="omx-exec", clarification_status="open")
@@ -288,7 +307,8 @@ def cmd_omx_deep_interview(args: argparse.Namespace) -> int:
 def cmd_omx_ralplan(args: argparse.Namespace) -> int:
     lane = require_lane(args.lane_id)
     lane_path = lane_file(args.lane_id)
-    session_name = f"{lane['session_name']}-ralplan"
+    base_session_name = lane["lane_id"]
+    session_name = f"{base_session_name}-ralplan"
     workdir = Path(lane["worktree_path"])
     workdir.mkdir(parents=True, exist_ok=True)
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,7 +317,7 @@ def cmd_omx_ralplan(args: argparse.Namespace) -> int:
     suffix = " --deliberate" if args.deliberate else ""
     prompt = f'$ralplan{suffix} {shlex.quote(args.prompt)}'
     cmd = build_omx_exec_command(workdir, prompt, run_log, dangerous=args.dangerous)
-    start_tmux_command(session_name, cmd)
+    start_tmux_command(session_name, cmd, workdir)
 
     before = lane["state"]
     lane["session_name"] = session_name
@@ -317,6 +337,86 @@ def cmd_omx_ralplan(args: argparse.Namespace) -> int:
         "log_path": str(run_log),
         "deliberate": args.deliberate,
         "dangerous": args.dangerous,
+        "outcome": "ok",
+    })
+    print(json.dumps({"session_name": session_name, "log_path": str(run_log)}, indent=2))
+    return 0
+
+
+def cmd_omx_ralph(args: argparse.Namespace) -> int:
+    lane = require_lane(args.lane_id)
+    lane_path = lane_file(args.lane_id)
+    base_session_name = lane["lane_id"]
+    session_name = f"{base_session_name}-ralph"
+    workdir = Path(lane["worktree_path"])
+    workdir.mkdir(parents=True, exist_ok=True)
+    RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    run_log = RUN_LOG_DIR / f"{session_name}.log"
+
+    if args.prd:
+        omx_cmd = f'omx ralph --prd {shlex.quote(args.prompt)}'
+    else:
+        omx_cmd = f'omx ralph {shlex.quote(args.prompt)}'
+    if args.no_deslop:
+        omx_cmd += ' --no-deslop'
+    cmd = f'cd {shlex.quote(str(workdir))} && {omx_cmd} >> {shlex.quote(str(run_log))} 2>&1'
+    start_tmux_command(session_name, cmd, workdir)
+
+    before = lane["state"]
+    lane["session_name"] = session_name
+    lane = lane_state_change(lane, new_state="executing", continuation_owner="omx-ralph")
+    save_json(lane_path, lane)
+    append_log({
+        "timestamp": now_iso(),
+        "raw_command": f'!omx ralph "{args.prompt}"',
+        "command_type": "omx.ralph",
+        "project_id": lane["project_id"],
+        "lane_id": lane["lane_id"],
+        "thread_id": lane["thread_id"],
+        "state_before": before,
+        "state_after": lane["state"],
+        "action": "start_omx_ralph",
+        "tmux_session": session_name,
+        "log_path": str(run_log),
+        "prd": args.prd,
+        "no_deslop": args.no_deslop,
+        "outcome": "ok",
+    })
+    print(json.dumps({"session_name": session_name, "log_path": str(run_log)}, indent=2))
+    return 0
+
+
+def cmd_omx_team(args: argparse.Namespace) -> int:
+    lane = require_lane(args.lane_id)
+    lane_path = lane_file(args.lane_id)
+    base_session_name = lane["lane_id"]
+    session_name = f"{base_session_name}-team"
+    workdir = Path(lane["worktree_path"])
+    workdir.mkdir(parents=True, exist_ok=True)
+    RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    run_log = RUN_LOG_DIR / f"{session_name}.log"
+
+    omx_cmd = f'omx team {shlex.quote(args.team_shape)} {shlex.quote(args.prompt)}'
+    cmd = f'cd {shlex.quote(str(workdir))} && {omx_cmd} >> {shlex.quote(str(run_log))} 2>&1'
+    start_tmux_command(session_name, cmd, workdir)
+
+    before = lane["state"]
+    lane["session_name"] = session_name
+    lane = lane_state_change(lane, new_state="executing", continuation_owner="omx-team")
+    save_json(lane_path, lane)
+    append_log({
+        "timestamp": now_iso(),
+        "raw_command": f'!omx team {args.team_shape} "{args.prompt}"',
+        "command_type": "omx.team",
+        "project_id": lane["project_id"],
+        "lane_id": lane["lane_id"],
+        "thread_id": lane["thread_id"],
+        "state_before": before,
+        "state_after": lane["state"],
+        "action": "start_omx_team",
+        "tmux_session": session_name,
+        "log_path": str(run_log),
+        "team_shape": args.team_shape,
         "outcome": "ok",
     })
     print(json.dumps({"session_name": session_name, "log_path": str(run_log)}, indent=2))
@@ -452,6 +552,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--deliberate", action="store_true")
     s.add_argument("--dangerous", action="store_true")
     s.set_defaults(func=cmd_omx_ralplan)
+
+    s = sub.add_parser("omx-ralph")
+    s.add_argument("lane_id")
+    s.add_argument("prompt")
+    s.add_argument("--prd", action="store_true")
+    s.add_argument("--no-deslop", action="store_true")
+    s.set_defaults(func=cmd_omx_ralph)
+
+    s = sub.add_parser("omx-team")
+    s.add_argument("lane_id")
+    s.add_argument("team_shape", help='Example: 3:executor')
+    s.add_argument("prompt")
+    s.set_defaults(func=cmd_omx_team)
 
     s = sub.add_parser("lane-status")
     s.add_argument("lane_id")

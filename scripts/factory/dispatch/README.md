@@ -8,6 +8,8 @@ Deterministic local dispatcher MVP lives here.
 - `lane-new`
 - `omx-deep-interview`
 - `omx-ralplan`
+- `omx-ralph`
+- `omx-team`
 - `lane-status`
 - `lane-pause`
 - `lane-resume`
@@ -27,6 +29,8 @@ python3 scripts/factory/dispatch/factory.py proj-init trend-spotter ~/openclaw/p
 python3 scripts/factory/dispatch/factory.py lane-new trend-spotter feature trend-spotter-mvp --thread-id DISCORD_THREAD_ID
 python3 scripts/factory/dispatch/factory.py omx-deep-interview trend-spotter-mvp "Build a trend spotter app from YouTube transcripts for dropshippers"
 python3 scripts/factory/dispatch/factory.py omx-ralplan trend-spotter-mvp "Approve architecture and validation plan" --deliberate
+python3 scripts/factory/dispatch/factory.py omx-ralph trend-spotter-mvp "Ship one verified MVP slice" --prd
+python3 scripts/factory/dispatch/factory.py omx-team trend-spotter-mvp 3:executor "Implement the approved MVP slice with verification"
 python3 scripts/factory/dispatch/factory.py lane-pause trend-spotter-mvp "Waiting on product clarification"
 python3 scripts/factory/dispatch/factory.py lane-change trend-spotter-mvp "Add evidence ranking, keep transcript ingestion unchanged"
 python3 scripts/factory/dispatch/factory.py lane-done trend-spotter-mvp "Require visual verification too" --force-replanning
