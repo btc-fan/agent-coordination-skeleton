@@ -1,0 +1,15 @@
+{
+  "project_id": "agent-coordination-skeleton",
+  "name": "agent-coordination-skeleton",
+  "repo_path": "/Users/python-qa/openclaw/projects/agent-coordination-skeleton",
+  "default_branch": "main",
+  "discord": {
+    "server_id": "",
+    "control_channel_id": "",
+    "decisions_channel_id": "",
+    "ops_channel_id": "skeleton-test-only"
+  },
+  "openagent_enabled": true,
+  "created_at": "2026-04-08T15:27:16Z",
+  "updated_at": "2026-04-08T15:27:16Z"
+}
