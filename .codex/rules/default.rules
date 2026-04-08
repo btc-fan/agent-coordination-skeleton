@@ -1,0 +1,5 @@
+- Do not claim done without verification evidence.
+- Do not write outside allowed project directories.
+- Do not run destructive shell commands without explicit approval.
+- Prefer worktrees and atomic PRs for risky changes.
+- Re-anchor on docs/prd/current.md and docs/adr/* when scope becomes unclear.

@@ -1,0 +1,22 @@
+# Runtime state
+.omx/
+.sisyphus/
+.port_sessions/
+
+# OmX/Codex generated hook state
+.codex/hooks.json
+
+# Worktree/runtime folders
+worktrees/*
+!worktrees/.gitkeep
+logs/
+
+# OS/editor noise
+.DS_Store
+*.log
+.env
+.env.*
+node_modules/
+dist/
+build/
+coverage/

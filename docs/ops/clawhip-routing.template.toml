@@ -1,0 +1,21 @@
+# clawhip routing template
+# Fill in token/channel IDs before use.
+
+[providers.discord]
+token = "DISCORD_BOT_TOKEN_FOR_CLAWHIP"
+default_channel = "123456789012345678"
+
+[dispatch]
+routine_batch_window_secs = 5
+ci_batch_window_secs = 300
+
+[[routes]]
+event = "session.*"
+filter = { tool = "omx", repo_name = "agent-coordination-skeleton" }
+channel = "123456789012345678"
+format = "compact"
+
+[[routes]]
+event = "tmux.*"
+channel = "123456789012345678"
+format = "alert"
