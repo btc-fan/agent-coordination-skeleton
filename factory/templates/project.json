@@ -1,0 +1,15 @@
+{
+  "project_id": "project-slug",
+  "name": "Project Name",
+  "repo_path": "/absolute/path/to/repo",
+  "default_branch": "main",
+  "discord": {
+    "server_id": "",
+    "control_channel_id": "",
+    "decisions_channel_id": "",
+    "ops_channel_id": ""
+  },
+  "openagent_enabled": true,
+  "created_at": "",
+  "updated_at": ""
+}
