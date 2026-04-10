@@ -20,6 +20,8 @@ node_modules/
 dist/
 build/
 coverage/
+.venv/
+.runtime/
 .codex/*
 !.codex/agents/
 !.codex/agents/**
