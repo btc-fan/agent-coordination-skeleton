@@ -35,6 +35,9 @@ python3 scripts/factory/dispatch/factory.py lane-pause trend-spotter-mvp "Waitin
 python3 scripts/factory/dispatch/factory.py lane-change trend-spotter-mvp "Add evidence ranking, keep transcript ingestion unchanged"
 python3 scripts/factory/dispatch/factory.py lane-done trend-spotter-mvp "Require visual verification too" --force-replanning
 python3 scripts/factory/dispatch/factory.py lane-reply trend-spotter-mvp "Focus on MVP only" --to-state planning
+python3 scripts/factory/dispatch/factory.py lane-review-request trend-spotter-mvp
+python3 scripts/factory/dispatch/factory.py lane-review-reject trend-spotter-mvp "Implementation direction is wrong; replan around the approved PRD"
+python3 scripts/factory/dispatch/factory.py lane-review-approve trend-spotter-mvp
 python3 scripts/factory/dispatch/factory.py lane-status trend-spotter-mvp
 python3 scripts/factory/dispatch/factory.py lane-tail trend-spotter-mvp --lines 60
 python3 scripts/factory/dispatch/factory.py lane-stop trend-spotter-mvp

@@ -42,4 +42,7 @@ A Discord thread maps to one lane.
 - `!stop <lane>` kills tmux/session continuation, preserves artifacts, and marks lane `stopped`.
 - `!change <lane> ...` must move the lane to `replanning` after docs are updated.
 - `!done <lane> ...` updates task-specific DoD and may require replanning before resume.
+- `!lane-review-request` marks review status `requested`.
+- `!lane-review-reject` must move the lane to `review_rejected` and force replanning.
+- `!lane-review-approve` clears review blockage and allows verification closure.
 - `done` is valid only after task-specific DoD, verification, reviewer closure, docs updates, issue/PR linkage, and clarification closure all hold.

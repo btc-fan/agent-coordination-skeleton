@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shlex
 import subprocess
 from pathlib import Path
 
@@ -18,22 +17,71 @@ PYTHON = str(ROOT / ".venv" / "bin" / "python")
 
 HELP = """Factory Skeleton Bot — commands
 
-Project/lane:
-- !proj init <name> <repo-path>
+PROJECT / LANE
 - !lane new <type> <slug>
-- !lane status <lane>
-- !pause <lane> <reason>
-- !resume <lane>
-- !stop <lane>
-- !change <lane> <delta>
-- !done <lane> <rule>
-- !reply <lane> <answer>
+  Create a new lane and its task doc.
+  Example: !lane new feature mobile-test
 
-OmX:
+- !lane status <lane>
+  Show current lane snapshot.
+  Example: !lane status mobile-test
+
+- !pause <lane> <reason>
+  Pause autonomous progress but keep artifacts/session state.
+  Example: !pause mobile-test waiting for review
+
+- !resume <lane>
+  Resume a paused/replanning lane.
+  Example: !resume mobile-test
+
+- !stop <lane>
+  Hard stop the lane and clear continuation ownership.
+  Example: !stop mobile-test
+
+- !change <lane> <delta>
+  Record a scope/requirement change and force replanning.
+  Example: !change mobile-test keep scope tiny and focus on one blocked cycle
+
+- !done <lane> <rule>
+  Update definition of done; currently forces replanning.
+  Example: !done mobile-test require reviewer approval before done
+
+- !reply <lane> <answer>
+  Inject a human reply into the lane's active tmux session.
+  Example: !reply mobile-test focus only on MVP
+
+REVIEWER LOOP
+- !lane-review-request <lane>
+  Mark lane as ready for review.
+
+- !lane-review-reject <lane> <reason>
+  Reject current direction and force replanning.
+
+- !lane-review-approve <lane>
+  Approve lane direction so it can move toward verification.
+
+OMX
+Use pipe-separated prompts so lane and prompt are unambiguous.
+
 - !omx deep-interview <lane> | <prompt>
+  Requirements clarification only.
+  Example: !omx deep-interview mobile-test | Build the smallest AFM proof end-to-end
+
 - !omx ralplan <lane> | <prompt>
+  Consensus planning.
+  Example: !omx ralplan mobile-test | Create the architecture and verification plan
+
 - !omx ralph <lane> | <prompt>
+  Persistent single-owner execution loop.
+
 - !omx team <lane> | <team-shape> | <prompt>
+  Parallel tmux worker execution.
+  Example: !omx team mobile-test | 3:executor | Implement the approved MVP slice
+
+NOTES
+- This bot is currently scoped only to the skeleton test channel.
+- Some modes are still being refined (especially Ralph/Team runtime behavior).
+- If a command is unknown, send !help again and use one line per command.
 """
 
 
@@ -64,6 +112,12 @@ def parse_command(text: str) -> list[str] | None:
     if m := re.match(r"^!lane new\s+(\S+)\s+(\S+)$", t):
         lane_type, slug = m.groups()
         return ["lane-new", "agent-coordination-skeleton", lane_type, slug, "--thread-id", str(ALLOWED_CHANNEL_ID)]
+    if m := re.match(r"^!lane-review-request\s+(\S+)$", t):
+        return ["lane-review-request", m.group(1)]
+    if m := re.match(r"^!lane-review-reject\s+(\S+)\s+(.+)$", t, re.S):
+        return ["lane-review-reject", m.group(1), m.group(2)]
+    if m := re.match(r"^!lane-review-approve\s+(\S+)$", t):
+        return ["lane-review-approve", m.group(1)]
     if m := re.match(r"^!omx deep-interview\s+(\S+)\s*\|\s*(.+)$", t, re.S):
         return ["omx-deep-interview", m.group(1), m.group(2), "--dangerous"]
     if m := re.match(r"^!omx ralplan\s+(\S+)\s*\|\s*(.+)$", t, re.S):
@@ -95,7 +149,7 @@ async def on_message(message: discord.Message):
     cmd = parse_command(message.content)
     if not cmd:
         if message.content.strip().startswith("!"):
-            await message.reply("Unknown command. Send `!help`.")
+            await message.reply("Unknown command. Send `!help`. Use one command per message.")
         return
     if cmd == ["__help__"]:
         await message.reply(HELP)

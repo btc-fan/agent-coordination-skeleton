@@ -19,6 +19,7 @@ LANES = STATE / "lanes"
 THREADS = STATE / "threads"
 TEMPLATES = FACTORY / "templates"
 LOG_FILE = FACTORY / "logs" / "dispatcher.jsonl"
+LANE_EVENT_LOG = FACTORY / "logs" / "lane-events.jsonl"
 TASK_TEMPLATE_DIR = ROOT / "docs" / "tasks" / "templates"
 TASKS_DIR = ROOT / "docs" / "tasks" / "active"
 RUN_LOG_DIR = ROOT / ".omx" / "dispatcher-runs"
@@ -56,6 +57,36 @@ def append_log(entry: dict[str, Any]) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a") as f:
         f.write(json.dumps(entry) + "\n")
+
+
+def append_lane_event(lane: dict[str, Any], event_type: str, actor: str, summary: str, **details: Any) -> None:
+    LANE_EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "timestamp": now_iso(),
+        "event_type": event_type,
+        "project_id": lane.get("project_id", ""),
+        "lane_id": lane.get("lane_id", ""),
+        "thread_id": lane.get("thread_id", ""),
+        "state": lane.get("state", ""),
+        "actor": actor,
+        "summary": summary,
+    }
+    if lane.get("session_name"):
+        payload["session_name"] = lane.get("session_name")
+    if lane.get("session_id"):
+        payload["session_id"] = lane.get("session_id")
+    if lane.get("issue_id"):
+        payload["issue_id"] = lane.get("issue_id")
+    if lane.get("pr_id"):
+        payload["pr_id"] = lane.get("pr_id")
+    if lane.get("review_status"):
+        payload["review_status"] = lane.get("review_status")
+    if lane.get("verification_status"):
+        payload["verification_status"] = lane.get("verification_status")
+    if details:
+        payload["details"] = details
+    with LANE_EVENT_LOG.open("a") as f:
+        f.write(json.dumps(payload) + "\n")
 
 
 def slugify(value: str) -> str:
@@ -264,6 +295,7 @@ def cmd_lane_new(args: argparse.Namespace) -> int:
         "updated_at": now_iso(),
     })
     save_json(thread_file(thread_id), thread)
+    append_lane_event(data, "lane.created", "dispatcher", "Lane created and task doc instantiated", task_doc=str(task_doc.relative_to(ROOT)))
     append_log({"timestamp": now_iso(), "command_type": "lane.new", "project_id": args.project_id, "lane_id": lane_id, "thread_id": thread_id, "action": "lane_created", "task_doc": str(task_doc.relative_to(ROOT)), "outcome": "ok"})
     print(lane_path)
     return 0
@@ -285,6 +317,7 @@ def cmd_omx_deep_interview(args: argparse.Namespace) -> int:
     before = lane["state"]
     lane = lane_state_change(lane, new_state="planning", continuation_owner="omx-exec", clarification_status="open")
     save_json(lane_path, lane)
+    append_lane_event(lane, "lane.started", "dispatcher", "Started OmX deep-interview", mode="deep-interview")
     append_log({
         "timestamp": now_iso(),
         "raw_command": f'!omx deep-interview "{args.prompt}"',
@@ -323,6 +356,7 @@ def cmd_omx_ralplan(args: argparse.Namespace) -> int:
     lane["session_name"] = session_name
     lane = lane_state_change(lane, new_state="planning", continuation_owner="omx-exec")
     save_json(lane_path, lane)
+    append_lane_event(lane, "lane.started", "dispatcher", "Started OmX ralplan", mode="ralplan", deliberate=args.deliberate)
     append_log({
         "timestamp": now_iso(),
         "raw_command": f'!omx ralplan "{args.prompt}"',
@@ -438,6 +472,7 @@ def cmd_lane_pause(args: argparse.Namespace) -> int:
     if task_doc:
         update_task_doc_section(task_doc, "Paused State", f"Paused at {now_iso()}\n\nReason: {args.reason}")
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.paused", "human", "Lane paused", reason=args.reason)
     append_log({"timestamp": now_iso(), "command_type": "lane.pause", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "reason": args.reason, "action": "pause_lane", "outcome": "ok"})
     print(f"paused {args.lane_id}")
     return 0
@@ -450,6 +485,7 @@ def cmd_lane_resume(args: argparse.Namespace) -> int:
         raise SystemExit(f"cannot resume lane from state: {before}")
     lane = lane_state_change(lane, new_state=args.to_state)
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.resumed", "human", "Lane resumed")
     append_log({"timestamp": now_iso(), "command_type": "lane.resume", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "resume_lane", "outcome": "ok"})
     print(f"resumed {args.lane_id} -> {lane['state']}")
     return 0
@@ -463,6 +499,8 @@ def cmd_lane_change(args: argparse.Namespace) -> int:
     if task_doc:
         update_task_doc_section(task_doc, "Change Request", f"Updated at {now_iso()}\n\n{args.requirement_delta}")
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.changed", "human", "Lane requirements changed", requirement_delta=args.requirement_delta)
+    append_lane_event(lane, "lane.replanning", "dispatcher", "Lane moved to replanning due to change")
     append_log({"timestamp": now_iso(), "command_type": "lane.change", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "requirement_delta": args.requirement_delta, "action": "change_lane", "outcome": "ok"})
     print(f"changed {args.lane_id}")
     return 0
@@ -478,6 +516,7 @@ def cmd_lane_done(args: argparse.Namespace) -> int:
     if args.force_replanning:
         lane["state"] = "replanning"
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.done-denied" if args.force_replanning else "lane.done-approved", "human", "Definition of done updated", new_done_rule=args.new_done_rule)
     append_log({"timestamp": now_iso(), "command_type": "lane.done", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "new_done_rule": args.new_done_rule, "force_replanning": args.force_replanning, "action": "update_done_rule", "outcome": "ok"})
     print(f"updated done rule for {args.lane_id}")
     return 0
@@ -492,6 +531,7 @@ def cmd_lane_reply(args: argparse.Namespace) -> int:
     before = lane["state"]
     lane = lane_state_change(lane, new_state=args.to_state, clarification_status="clear")
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.reply-injected", "human", "Reply injected into active lane")
     append_log({"timestamp": now_iso(), "command_type": "lane.reply", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "inject_reply", "outcome": "ok"})
     print(f"replied to {args.lane_id}")
     return 0
@@ -505,8 +545,52 @@ def cmd_lane_stop(args: argparse.Namespace) -> int:
     before = lane["state"]
     lane = lane_state_change(lane, new_state="stopped", continuation_owner="")
     save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.stopped", "human", "Lane stopped")
     append_log({"timestamp": now_iso(), "command_type": "lane.stop", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "stop_lane", "outcome": "ok"})
     print(f"stopped {args.lane_id}")
+    return 0
+
+
+def cmd_lane_review_request(args: argparse.Namespace) -> int:
+    lane = require_lane(args.lane_id)
+    before = lane["state"]
+    lane["review_status"] = "requested"
+    lane["updated_at"] = now_iso()
+    save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.review-requested", "dispatcher", "Reviewer requested")
+    append_log({"timestamp": now_iso(), "command_type": "lane.review-request", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "review_requested", "outcome": "ok"})
+    print(f"review requested for {args.lane_id}")
+    return 0
+
+
+def cmd_lane_review_reject(args: argparse.Namespace) -> int:
+    lane = require_lane(args.lane_id)
+    before = lane["state"]
+    lane["review_status"] = "rejected"
+    lane["state"] = "review_rejected"
+    lane["updated_at"] = now_iso()
+    task_doc = ROOT / lane.get("task_doc", "") if lane.get("task_doc") else None
+    if task_doc:
+        update_task_doc_section(task_doc, "Reviewer Rejection", f"Updated at {now_iso()}\n\n{args.reason}")
+    save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.review-rejected", "reviewer", "Reviewer rejected lane output", reason=args.reason)
+    append_lane_event(lane, "lane.replanning", "dispatcher", "Lane must replan after reviewer rejection")
+    append_log({"timestamp": now_iso(), "command_type": "lane.review-reject", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "review_rejected", "outcome": "ok"})
+    print(f"review rejected for {args.lane_id}")
+    return 0
+
+
+def cmd_lane_review_approve(args: argparse.Namespace) -> int:
+    lane = require_lane(args.lane_id)
+    before = lane["state"]
+    lane["review_status"] = "approved"
+    if lane["state"] == "review_rejected":
+        lane["state"] = "verifying"
+    lane["updated_at"] = now_iso()
+    save_json(lane_file(args.lane_id), lane)
+    append_lane_event(lane, "lane.review-approved", "reviewer", "Reviewer approved lane output")
+    append_log({"timestamp": now_iso(), "command_type": "lane.review-approve", "project_id": lane["project_id"], "lane_id": lane["lane_id"], "thread_id": lane["thread_id"], "state_before": before, "state_after": lane["state"], "action": "review_approved", "outcome": "ok"})
+    print(f"review approved for {args.lane_id}")
     return 0
 
 
@@ -600,6 +684,19 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("lane-stop")
     s.add_argument("lane_id")
     s.set_defaults(func=cmd_lane_stop)
+
+    s = sub.add_parser("lane-review-request")
+    s.add_argument("lane_id")
+    s.set_defaults(func=cmd_lane_review_request)
+
+    s = sub.add_parser("lane-review-reject")
+    s.add_argument("lane_id")
+    s.add_argument("reason")
+    s.set_defaults(func=cmd_lane_review_reject)
+
+    s = sub.add_parser("lane-review-approve")
+    s.add_argument("lane_id")
+    s.set_defaults(func=cmd_lane_review_approve)
 
     s = sub.add_parser("lane-tail")
     s.add_argument("lane_id")
